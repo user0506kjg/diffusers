@@ -34,6 +34,7 @@ class GaussianDDPMScheduler(nn.Module, ConfigMixin):
         beta_end=0.02,
         beta_schedule="linear",
         variance_type="fixed_small",
+        clip_predicted_image=True,
     ):
         super().__init__()
         self.register(
@@ -42,8 +43,10 @@ class GaussianDDPMScheduler(nn.Module, ConfigMixin):
             beta_end=beta_end,
             beta_schedule=beta_schedule,
             variance_type=variance_type,
+            clip_predicted_image=clip_predicted_image,
         )
         self.num_timesteps = int(timesteps)
+        self.clip_image = clip_predicted_image
 
         if beta_schedule == "linear":
             betas = linear_beta_schedule(timesteps, beta_start=beta_start, beta_end=beta_end)
@@ -58,23 +61,23 @@ class GaussianDDPMScheduler(nn.Module, ConfigMixin):
 
         alphas = 1.0 - betas
         alphas_cumprod = torch.cumprod(alphas, axis=0)
-        alphas_cumprod_prev = torch.nn.functional.pad(alphas_cumprod[:-1], (1, 0), value=1.0)
-
-        variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-
-        # TODO(PVP) - check how much of these is actually necessary!
-        # LDM only uses "fixed_small"; glide seems to use a weird mix of the two, ...
-        # https://github.com/openai/glide-text2im/blob/69b530740eb6cef69442d6180579ef5ba9ef063e/glide_text2im/gaussian_diffusion.py#L246
-        if variance_type == "fixed_small":
-            log_variance = torch.log(variance.clamp(min=1e-20))
-        elif variance_type == "fixed_large":
-            log_variance = torch.log(torch.cat([variance[1:2], betas[1:]], dim=0))
 
         self.register_buffer("betas", betas.to(torch.float32))
         self.register_buffer("alphas", alphas.to(torch.float32))
         self.register_buffer("alphas_cumprod", alphas_cumprod.to(torch.float32))
 
-        self.register_buffer("log_variance", log_variance.to(torch.float32))
+#        alphas_cumprod_prev = torch.nn.functional.pad(alphas_cumprod[:-1], (1, 0), value=1.0)
+        # TODO(PVP) - check how much of these is actually necessary!
+        # LDM only uses "fixed_small"; glide seems to use a weird mix of the two, ...
+        # https://github.com/openai/glide-text2im/blob/69b530740eb6cef69442d6180579ef5ba9ef063e/glide_text2im/gaussian_diffusion.py#L246
+#        variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+#        if variance_type == "fixed_small":
+#            log_variance = torch.log(variance.clamp(min=1e-20))
+#        elif variance_type == "fixed_large":
+#            log_variance = torch.log(torch.cat([variance[1:2], betas[1:]], dim=0))
+#
+#
+#        self.register_buffer("log_variance", log_variance.to(torch.float32))
 
     def get_alpha(self, time_step):
         return self.alphas[time_step]
@@ -86,6 +89,43 @@ class GaussianDDPMScheduler(nn.Module, ConfigMixin):
         if time_step < 0:
             return torch.tensor(1.0)
         return self.alphas_cumprod[time_step]
+
+    def get_variance(self, t):
+        alpha_prod_t = self.get_alpha_prod(t)
+        alpha_prod_t_prev = self.get_alpha_prod(t - 1)
+
+        # For t > 0, compute predicted variance βt (see formala (6) and (7) from https://arxiv.org/pdf/2006.11239.pdf)
+        # and sample from it to get previous image
+        # x_{t-1} ~ N(pred_prev_image, variance) == add variane to pred_image
+        variance = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * self.get_beta(t).sqrt()
+
+        return variance
+
+    def predict_prev_image_step(self, residual, image, t, output_pred_x_0=False):
+        # 1. compute alphas, betas
+        alpha_prod_t = self.get_alpha_prod(t)
+        alpha_prod_t_prev = self.get_alpha_prod(t - 1)
+        beta_prod_t = 1 - alpha_prod_t
+        beta_prod_t_prev = 1 - alpha_prod_t_prev
+
+        # 2. compute predicted original image from predicted noise also called
+        # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
+        pred_original_image = (image - beta_prod_t.sqrt() * residual) / alpha_prod_t.sqrt()
+
+        # 3. Clip "predicted x_0"
+        if self.clip_predicted_image:
+            pred_original_image = torch.clamp(pred_original_image, -1, 1)
+
+        # 4. Compute coefficients for pred_original_image x_0 and current image x_t
+        # See formula (7) from https://arxiv.org/pdf/2006.11239.pdf
+        pred_original_image_coeff = (alpha_prod_t_prev.sqrt() * self.get_beta(t)) / beta_prod_t
+        current_image_coeff = self.get_alpha(t).sqrt() * beta_prod_t_prev / beta_prod_t
+
+        # 5. Compute predicted previous image µ_t
+        # See formula (7) from https://arxiv.org/pdf/2006.11239.pdf
+        pred_prev_image = pred_original_image_coeff * pred_original_image + current_image_coeff * image
+
+        return pred_prev_image
 
     def sample_noise(self, shape, device, generator=None):
         # always sample on CPU to be deterministic
