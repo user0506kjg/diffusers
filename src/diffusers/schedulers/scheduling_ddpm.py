@@ -148,7 +148,7 @@ class DDPMScheduler(SchedulerMixin, ConfigMixin):
         if variance_type is None:
             variance_type = self.config.variance_type
 
-        # hacks - were probs added for training stability
+        # hacks - were probably added for training stability
         if variance_type == "fixed_small":
             variance = self.clip(variance, min_value=1e-20)
         # for rl-diffuser https://arxiv.org/abs/2205.09991
@@ -187,7 +187,6 @@ class DDPMScheduler(SchedulerMixin, ConfigMixin):
             timestep (`int`): current discrete timestep in the diffusion chain.
             sample (`torch.FloatTensor` or `np.ndarray`):
                 current instance of sample being created by diffusion process.
-            eta (`float`): weight of noise for added noise in diffusion step.
             predict_epsilon (`bool`):
                 optional flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
