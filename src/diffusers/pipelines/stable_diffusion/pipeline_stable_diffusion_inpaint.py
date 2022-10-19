@@ -82,8 +82,6 @@ class StableDiffusionInpaintPipeline(DiffusionPipeline):
         feature_extractor: CLIPFeatureExtractor,
     ):
         super().__init__()
-        logger.info("`StableDiffusionInpaintPipeline` is experimental and will very likely change in the future.")
-
         if hasattr(scheduler.config, "steps_offset") and scheduler.config.steps_offset != 1:
             deprecation_message = (
                 f"The configuration file of this scheduler: {scheduler} is outdated. `steps_offset`"
@@ -223,6 +221,8 @@ class StableDiffusionInpaintPipeline(DiffusionPipeline):
             list of `bool`s denoting whether the corresponding generated image likely represents "not-safe-for-work"
             (nsfw) content, according to the `safety_checker`.
         """
+        # TODO(Suraj) - adapt to your use case
+
         if isinstance(prompt, str):
             batch_size = 1
         elif isinstance(prompt, list):
