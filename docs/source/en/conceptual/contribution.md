@@ -578,3 +578,13 @@ The repository keeps AI-agent configuration in `.ai/` and exposes local agent fi
   - `make codex` — symlink guidelines + skills for OpenAI Codex
   - `make claude` — symlink guidelines + skills for Claude Code
   - `make clean-ai` — remove all generated symlinks
+
+### AI-assisted and agentic contributions
+
+AI-assisted contributions are welcome, but they must be coordinated, scoped, and verified to keep review load manageable. PRs that do not follow these guidelines may be closed without detailed review.
+
+- **Coordinate before opening a PR.** Find or open an issue, review similar PRs (open and recently closed), and wait for an explicit acknowledgment from a maintainer on that issue before opening a PR. This gives us a chance to discuss scope, avoid duplicate work, and confirm the approach.
+- **Fix patterns, not one-offs.** If you spot an recurring issue, search the codebase for similar instances and open a *single* issue with a clear, systematic scope (e.g. "fix mutable defaults across all schedulers") rather than many issues or PRs for individual instances. 
+- **Include in the PR description:**
+  - A **coordination link** to the issue or discussion where a maintainer acknowledged the work.
+  - The **test commands you ran** and their results (paste relevant output, not just "tests pass").
